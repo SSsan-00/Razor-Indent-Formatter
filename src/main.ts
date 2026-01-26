@@ -33,14 +33,14 @@ app.innerHTML = `
           <h2>Input</h2>
           <span class="badge">Paste here</span>
         </div>
-        <textarea id="input" spellcheck="false" placeholder="Paste Razor / HTML / JS here..."></textarea>
+        <textarea id="input" spellcheck="false" wrap="off" placeholder="Paste Razor / HTML / JS here..."></textarea>
       </section>
       <section class="panel">
         <div class="panel-header">
           <h2>Output</h2>
           <span class="badge">Read-only</span>
         </div>
-        <textarea id="output" spellcheck="false" readonly></textarea>
+        <textarea id="output" spellcheck="false" wrap="off" readonly></textarea>
       </section>
     </main>
 
@@ -71,6 +71,8 @@ elements.copyButton.addEventListener('click', async () => {
     }, 1200);
   }
 });
+
+syncPaneScroll(elements.input, elements.output);
 
 function mapElements(): Elements {
   const input = document.querySelector<HTMLTextAreaElement>('#input');
@@ -109,4 +111,23 @@ function formatAndDisplay(elements: Elements): void {
   }
 
   elements.output.value = result.output;
+}
+
+function syncPaneScroll(left: HTMLTextAreaElement, right: HTMLTextAreaElement): void {
+  let isSyncing = false;
+
+  const sync = (source: HTMLTextAreaElement, target: HTMLTextAreaElement) => {
+    if (isSyncing) {
+      return;
+    }
+    isSyncing = true;
+    target.scrollTop = source.scrollTop;
+    target.scrollLeft = source.scrollLeft;
+    window.requestAnimationFrame(() => {
+      isSyncing = false;
+    });
+  };
+
+  left.addEventListener('scroll', () => sync(left, right), { passive: true });
+  right.addEventListener('scroll', () => sync(right, left), { passive: true });
 }
