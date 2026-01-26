@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Razor Indent Formatter</title>
+    <script type="module" crossorigin>
+(function(){const n=document.createElement("link").relList;if(n&&n.supports&&n.supports("modulepreload"))return;for(const s of document.querySelectorAll('link[rel="modulepreload"]'))i(s);new MutationObserver(s=>{for(const o of s)if(o.type==="childList")for(const a of o.addedNodes)a.tagName==="LINK"&&a.rel==="modulepreload"&&i(a)}).observe(document,{childList:!0,subtree:!0});function e(s){const o={};return s.integrity&&(o.integrity=s.integrity),s.referrerPolicy&&(o.referrerPolicy=s.referrerPolicy),s.crossOrigin==="use-credentials"?o.credentials="include":s.crossOrigin==="anonymous"?o.credentials="omit":o.credentials="same-origin",o}function i(s){if(s.ep)return;s.ep=!0;const o=e(s);fetch(s.href,o)}})();const F=new Set(["area","base","br","col","embed","hr","img","input","link","meta","param","source","track","wbr"]),V=new Set(["script","style"]),D=/<\s*\/\s*text\s*>/i,R="<!--",$="-->";function j(t,n){const e=G(n.indentSize),{lines:i,lineEnding:s}=Z(t),o=i.map(r=>J(r,e)),a=new Array(i.length).fill(null),f=[],u=[];let c=0,p=!1,m=null,L=!1,l=null,x=!1,O=!1;for(let r=0;r<i.length;r+=1){const h=i[r],y=o[r],d=y.rest.trimStart(),_=D.test(d),P=x&&I(h,(l==null?void 0:l.tagName)??"");if(L&&_&&(l&&(l.endLine=r-1,u.push(l),l=null),L=!1),x&&P&&(l&&(l.endLine=r-1,u.push(l),l=null),x=!1),L||x){a[r]=null;continue}const W=U(h,p);p=W.inComment;const E=W.cleaned;let v=Q(d),b=0,C=0;if(m)I(E,m)&&(C+=1,v===0&&d.startsWith(`</${m}`)&&(v=1),m=null);else if(!p){if(Y(d)){const H=X(E);for(const w of H){if(w.isClosing){C+=1;continue}w.isSelfClosing||(b+=1,V.has(w.name)&&(m=w.name))}}const S=z(y.rest,O);O=S.inBlockComment,b+=S.open,C+=S.close}const q=Math.max(0,c-v);a[r]=q*e,c=Math.max(0,c-C+b),T(d,"text")&&!k(d,"text")&&(L=!0,l={startLine:r+1,endLine:r,parentLevel:Math.max(0,c-1),tagName:"text",skip:!1}),T(d,"script")&&!k(d,"script")&&(x=!0,l={startLine:r+1,endLine:r,parentLevel:Math.max(0,c-1),tagName:"script",skip:!1}),T(d,"style")&&!k(d,"style")&&(x=!0,l={startLine:r+1,endLine:r,parentLevel:Math.max(0,c-1),tagName:"style",skip:!1})}L&&l&&(l.endLine=i.length-1,l.skip=!0,u.push(l)),tt(u,a,o,e);for(let r=0;r<a.length;r+=1)a[r]===null&&(a[r]=o[r].leadingWidth);const M=i.map((r,h)=>{const y=a[h]??0;return nt(o[h].rest,y)}),N=M.join(s),B=it(o,M);if(!B.ok)return{output:t,logs:[],error:B.message};f.push("Validation ok: non-leading content unchanged.");for(let r=0;r<o.length;r+=1){const h=o[r].leadingWidth,y=a[r]??h;h!==y&&f.push(`Line ${r+1}: ${h} -> ${y}`)}return f.length===0&&f.push("No indentation changes detected."),{output:N,logs:f}}function G(t){return!Number.isFinite(t)||t<=0?2:Math.floor(t)}function Z(t){const n=t.includes(`\r
+`)?`\r
+`:`
+`;return{lines:t.split(/\r\n|\n/),lineEnding:n}}function J(t,n){const e=t.match(/^(\s*)(.*)$/);if(!e)return{original:t,leading:"",rest:t,leadingWidth:0};const i=e[1],s=e[2];return{original:t,leading:i,rest:s,leadingWidth:K(i,n)}}function K(t,n){let e=0;for(const i of t)i==="	"?e+=n:e+=1;return e}function U(t,n){let e="",i=0;for(;i<t.length;){if(n){const o=t.indexOf($,i);if(o===-1)return{cleaned:e,inComment:!0};i=o+$.length,n=!1;continue}const s=t.indexOf(R,i);if(s===-1){e+=t.slice(i);break}e+=t.slice(i,s),i=s+R.length,n=!0}return{cleaned:e,inComment:n}}function X(t){const n=[],e=/<[^>]+>/g;let i;for(;(i=e.exec(t))!==null;){const s=i[0];if(s.startsWith("<!")||s.startsWith("<?")||s.startsWith("<%"))continue;const o=s.match(/^<\s*\/?\s*([a-zA-Z0-9:-]+)/);if(!o)continue;const a=o[1].toLowerCase(),f=/^<\s*\//.test(s),u=/\/>\s*$/.test(s)||F.has(a);n.push({name:a,isClosing:f,isSelfClosing:u})}return n}function I(t,n){return n?new RegExp(`<\\s*\\/\\s*${n}\\s*>`,"i").test(t):!1}function Q(t){let n=0,e=t;for(;;){const i=e.match(/^<\s*\/\s*[a-zA-Z0-9:-]+[^>]*>\s*/);if(i){n+=1,e=e.slice(i[0].length);continue}const s=e.match(/^@?\}\s*/);if(s){n+=1,e=e.slice(s[0].length);continue}break}return n}function Y(t){const n=t.toLowerCase();return n.startsWith("<")?!0:n.startsWith("@:")?n.slice(2).trimStart().startsWith("<"):!1}function T(t,n){const e=t.toLowerCase();return e.startsWith(`<${n}`)?!0:e.startsWith("@:")?e.slice(2).trimStart().startsWith(`<${n}`):!1}function k(t,n){const e=t.toLowerCase();return e.startsWith(`</${n}`)?!0:e.startsWith("@:")?e.slice(2).trimStart().startsWith(`</${n}`):!1}function tt(t,n,e,i){for(const s of t){if(s.skip||s.endLine<s.startLine){et(s,n,e);continue}const o=s.parentLevel*i+i;let a=0,f=!1;for(let u=s.startLine;u<=s.endLine;u+=1){const c=e[u].rest,p=c.trimStart(),m=st(p),L=Math.max(0,a-(m>0?1:0));n[u]=o+L*i;const l=z(c,f);f=l.inBlockComment,a=Math.max(0,a+l.open-l.close)}}}function et(t,n,e){for(let i=t.startLine;i<=t.endLine;i+=1)n[i]=e[i].leadingWidth}function nt(t,n){return n<=0?t:`${" ".repeat(n)}${t}`}function it(t,n){if(t.length!==n.length)return{ok:!1,message:"Validation failed: line count changed."};const e=[];for(let i=0;i<t.length;i+=1){const s=t[i].original.replace(/^\s*/,""),o=n[i].replace(/^\s*/,"");s!==o&&e.push(String(i+1))}return e.length>0?{ok:!1,message:`Validation failed: non-indentation content changed on line(s) ${e.join(", ")}.`}:{ok:!0,message:""}}function st(t){let n=0,e=0;for(;e<t.length;){if(t[e]==="}"){n+=1,e+=1;continue}break}return n}function z(t,n){let e=0,i=0,s=!1,o=!1,a=!1,f=!1;for(let u=0;u<t.length;u+=1){const c=t[u],p=t[u+1]??"";if(n){c==="*"&&p==="/"&&(n=!1,u+=1);continue}if(!s&&!o&&!a){if(c==="/"&&p==="*"){n=!0,u+=1;continue}if(c==="/"&&p==="/")break}if(f){f=!1;continue}if(c==="\\\\"&&(s||o||a)){f=!0;continue}if(!o&&!a&&c==="'"){s=!s;continue}if(!s&&!a&&c==='"'){o=!o;continue}if(!s&&!o&&c==="`"){a=!a;continue}s||o||a||(c==="{"?e+=1:c==="}"&&(i+=1))}return{open:e,close:i,inBlockComment:n}}const A=document.querySelector("#app");if(!A)throw new Error("App root not found.");A.innerHTML=`
+  <div class="page">
+    <header class="header">
+      <div>
+        <h1>Razor Indent Formatter</h1>
+      </div>
+      <div class="controls">
+        <div class="control-group buttons">
+          <button id="formatBtn" type="button" class="primary">Format</button>
+          <button id="copyBtn" type="button">Copy Output</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Input</h2>
+          <span class="badge">Paste here</span>
+        </div>
+        <textarea id="input" spellcheck="false" placeholder="Paste Razor / HTML / JS here..."></textarea>
+      </section>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Output</h2>
+          <span class="badge">Read-only</span>
+        </div>
+        <textarea id="output" spellcheck="false" readonly></textarea>
+      </section>
+    </main>
+
+  </div>
+`;const g=ot();g.formatButton.addEventListener("click",()=>{rt(g)});g.copyButton.addEventListener("click",async()=>{const t=g.output.value;if(t)try{await navigator.clipboard.writeText(t),g.copyButton.textContent="Copied!",window.setTimeout(()=>{g.copyButton.textContent="Copy Output"},1200)}catch{g.copyButton.textContent="Copy failed",window.setTimeout(()=>{g.copyButton.textContent="Copy Output"},1200)}});function ot(){const t=document.querySelector("#input"),n=document.querySelector("#output"),e=document.querySelector("#formatBtn"),i=document.querySelector("#copyBtn");if(!t||!n||!e||!i)throw new Error("UI elements not found.");return{input:t,output:n,formatButton:e,copyButton:i}}function rt(t){const e=j(t.input.value,{indentSize:4});e.error||(t.output.value=e.output)}
+
+</script>
+    <style>
+:root{--bg: radial-gradient(circle at top left, #f5f1e8, #efe6d6 40%, #e7dfd0 100%);--panel: #f9f6ef;--ink: #1f1c17;--muted: #6f655a;--accent: #c0663f;--accent-dark: #8d4b32;--border: #d9cfbf;--shadow: 0 18px 40px rgba(40, 28, 16, .12);--radius: 18px;--mono: "Courier New", Courier, monospace;--sans: "Trebuchet MS", "Segoe UI", sans-serif;--serif: "Palatino Linotype", "Book Antiqua", Palatino, serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--sans)}#app{padding:28px 20px 24px;min-height:100vh}.page{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:24px;min-height:calc(100vh - 52px);animation:fadeIn .6s ease-out}.header{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px 32px;justify-content:space-between}.header h1{font-family:var(--serif);font-size:2.4rem;margin:0 0 8px}.header p{margin:0;color:var(--muted)}.controls{display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center;justify-content:flex-end}.control-group{display:flex;flex-direction:column;gap:6px;font-size:.85rem;color:var(--muted)}.control-group.buttons{flex-direction:row;gap:12px}button{border:1px solid var(--border);border-radius:12px;padding:12px 20px;font-family:var(--sans);font-weight:600;background:#fff;color:var(--ink);cursor:pointer;transition:transform .2s ease,box-shadow .2s ease;min-width:140px}button:hover{transform:translateY(-1px);box-shadow:0 8px 18px #00000014}button.primary{background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-color:transparent;color:#fff}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;flex:1;min-height:0}.panel{background:var(--panel);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px;min-height:0}.panel-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.panel-header h2{margin:0;font-size:1.2rem}.badge{background:#c0663f1f;color:var(--accent-dark);padding:4px 10px;border-radius:999px;font-size:.75rem;font-weight:600}textarea{flex:1;width:100%;resize:vertical;min-height:0;border-radius:14px;border:1px solid var(--border);padding:14px;font-size:.9rem;font-family:var(--mono);background:#fff;color:var(--ink);line-height:1.5}textarea[readonly]{background:#faf7f1}@keyframes fadeIn{0%{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@media (max-width: 720px){.header{flex-direction:column;align-items:flex-start}.controls{width:100%;justify-content:flex-start}.grid{grid-template-columns:1fr;flex:1}}
+
+</style>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
