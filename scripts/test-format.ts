@@ -4,7 +4,17 @@ type TestCase = {
   name: string;
   input: string;
   expected?: string;
+  allowLineChange?: boolean;
+  allowContentChange?: boolean;
 };
+
+function normalizeForComparison(line: string): string {
+  let normalized = line.replace(/^\s*/, '');
+  if (normalized.startsWith('@:')) {
+    normalized = normalized.replace(/^@:\s*/, '@:');
+  }
+  return normalized;
+}
 
 const tests: TestCase[] = [
   {
@@ -19,6 +29,23 @@ const tests: TestCase[] = [
     name: '<text> JS indentation',
     input: `<text>\n    function test() {\nconsole.log("test");\n}\n</text>`,
     expected: `<text>\n    function test() {\n        console.log("test");\n    }\n</text>`
+  },
+  {
+    name: 'script block with switch',
+    input: `<script>\nswitch(mode){\ncase "A":\nconsole.log("mode A");\nbreak;\n  case "B":\nconsole.log("mode B");\nbreak;\ndefault:\n console.log("default");\nbreak;\n}\n</script>`,
+    expected: `<script>\nswitch (mode) {\n    case "A":\n        console.log("mode A");\n        break;\n\n    case "B":\n        console.log("mode B");\n        break;\n\n    default:\n        console.log("default");\n        break;\n}\n</script>`,
+    allowLineChange: true,
+    allowContentChange: true
+  },
+  {
+    name: 'script block with Razor code block',
+    input: `<script>\n@{\nvar count = 3;\nvar isEnabled = true;\n}\n</script>`,
+    expected: `<script>\n@{\n    var count = 3;\n    var isEnabled = true;\n}\n</script>`
+  },
+  {
+    name: 'script block with Razor text lines',
+    input: `<script>\n@{\nvar count = 3;\nvar isEnabled = true;\n}\n\n@: if (@(isEnabled.ToString().ToLower()))\n@:\n@: {\n@: console.log("enabled");\n@: }\n\n@: for (let i = 0; i < @count; i++)\n@:\n@: {\n@: console.log(i);\n@: }\n</script>`,
+    expected: `<script>\n@{\n    var count = 3;\n    var isEnabled = true;\n}\n\n@: if (@(isEnabled.ToString().ToLower()))\n@:\n@: {\n@:     console.log("enabled");\n@: }\n\n@: for (let i = 0; i < @count; i++)\n@:\n@: {\n@:     console.log(i);\n@: }\n</script>`
   },
   {
     name: 'mixed Razor + text blocks',
@@ -36,15 +63,20 @@ for (const test of tests) {
   const firstLines = test.input.split(/\r\n|\n/);
   const outputLines = first.output.split(/\r\n|\n/);
 
-  if (firstLines.length !== outputLines.length) {
-    throw new Error(`Test "${test.name}" failed: line count changed.`);
+  if (!test.allowLineChange) {
+    if (firstLines.length !== outputLines.length) {
+      throw new Error(`Test "${test.name}" failed: line count changed.`);
+    }
   }
 
-  for (let i = 0; i < firstLines.length; i += 1) {
-    const original = firstLines[i].replace(/^\s*/, '');
-    const formatted = outputLines[i].replace(/^\s*/, '');
-    if (original !== formatted) {
-      throw new Error(`Test "${test.name}" failed: content changed on line ${i + 1}.`);
+  if (!test.allowContentChange) {
+    const limit = Math.min(firstLines.length, outputLines.length);
+    for (let i = 0; i < limit; i += 1) {
+      const original = normalizeForComparison(firstLines[i]);
+      const formatted = normalizeForComparison(outputLines[i]);
+      if (original !== formatted) {
+        throw new Error(`Test "${test.name}" failed: content changed on line ${i + 1}.`);
+      }
     }
   }
 

@@ -124,6 +124,12 @@ button.primary {
   min-height: 0;
 }
 
+.panel.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 3px rgba(192, 102, 63, 0.18), var(--shadow);
+}
+
 .panel-header {
   display: flex;
   align-items: center;
