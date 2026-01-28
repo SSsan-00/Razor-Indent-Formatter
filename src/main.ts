@@ -236,8 +236,9 @@ async function loadFileIntoInput(file: File, elements: Elements): Promise<void> 
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const encoding = detectEncoding(bytes);
+  const normalizedBytes = encoding === 'utf-8' ? stripUtf8Bom(bytes) : bytes;
   const decoder = new TextDecoder(encoding);
-  const text = decoder.decode(bytes);
+  const text = decoder.decode(normalizedBytes);
 
   elements.input.value = text;
   elements.output.value = '';
@@ -246,6 +247,9 @@ async function loadFileIntoInput(file: File, elements: Elements): Promise<void> 
 }
 
 function detectEncoding(bytes: Uint8Array): 'utf-8' | 'shift_jis' | 'euc-jp' {
+  if (hasUtf8Bom(bytes)) {
+    return 'utf-8';
+  }
   const candidates: Array<'utf-8' | 'shift_jis' | 'euc-jp'> = ['utf-8', 'shift_jis', 'euc-jp'];
   let best = { encoding: 'utf-8' as const, score: Number.NEGATIVE_INFINITY };
 
@@ -258,6 +262,14 @@ function detectEncoding(bytes: Uint8Array): 'utf-8' | 'shift_jis' | 'euc-jp' {
   }
 
   return best.encoding;
+}
+
+function hasUtf8Bom(bytes: Uint8Array): boolean {
+  return bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+}
+
+function stripUtf8Bom(bytes: Uint8Array): Uint8Array {
+  return hasUtf8Bom(bytes) ? bytes.subarray(3) : bytes;
 }
 
 function decodeWithEncoding(
