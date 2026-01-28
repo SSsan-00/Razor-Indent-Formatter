@@ -166,6 +166,7 @@ function formatAndDisplay(elements: Elements): void {
   });
 
   if (result.error) {
+    elements.output.value = result.output;
     return;
   }
 

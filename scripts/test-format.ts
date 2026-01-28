@@ -51,6 +51,57 @@ const tests: TestCase[] = [
     name: 'mixed Razor + text blocks',
     input: `@page\n@model SampleApp.Pages.MixedTextTagModel\n@{\nViewData["Title"]="Razor messy <text> + @:";\n  var users=Model.Users;\n}\n\n<h1>@ViewData["Title"]</h1>\n@if(users!=null){\n<ul>\n @foreach(var u in users){\n<li>\n<text>\nユーザー:\n</text>\n@u.Name\n@if(u.IsAdmin){\n<text>\n(Admin)\n</text>\n }else{\n@: (User)\n }\n@if(u.Tags!=null && u.Tags.Count>0){\n<text>\nTags:\n</text>\n @foreach(var t in u.Tags){\n<text>\n[\n</text>\n@t\n<text>\n]\n</text>\n }\n}else{\n@: Tags: none\n}\n</li>\n}\n</ul>\n}else{\n<p>\n<text>\nNo users\n</text>\n</p>\n}\n\n<p>\n@{\n var prefix="ID:";\n}\n<text>\n@prefix\n</text>\n@Model.Id\n</p>\n\n@section Scripts{\n<script>\n function logUser(name){\nif(name){\n console.log("user:"+name);\n}else{\nconsole.log("no name");\n}}\n</script>\n}`,
     expected: `@page\n@model SampleApp.Pages.MixedTextTagModel\n@{\n    ViewData["Title"]="Razor messy <text> + @:";\n    var users=Model.Users;\n}\n\n<h1>@ViewData["Title"]</h1>\n@if(users!=null){\n    <ul>\n        @foreach(var u in users){\n            <li>\n                <text>\n                    ユーザー:\n                </text>\n                @u.Name\n                @if(u.IsAdmin){\n                    <text>\n                        (Admin)\n                    </text>\n                }else{\n                    @: (User)\n                }\n                @if(u.Tags!=null && u.Tags.Count>0){\n                    <text>\n                        Tags:\n                    </text>\n                    @foreach(var t in u.Tags){\n                        <text>\n                            [\n                        </text>\n                        @t\n                        <text>\n                            ]\n                        </text>\n                    }\n                }else{\n                    @: Tags: none\n                }\n            </li>\n        }\n    </ul>\n}else{\n    <p>\n        <text>\n            No users\n        </text>\n    </p>\n}\n\n<p>\n    @{\n        var prefix="ID:";\n    }\n    <text>\n        @prefix\n    </text>\n    @Model.Id\n</p>\n\n@section Scripts{\n    <script>\n        function logUser(name){\n            if(name){\n                console.log("user:"+name);\n            }else{\n                console.log("no name");\n            }}\n    </script>\n}`
+  },
+  {
+    name: 'deep indent + switch + razor text lines',
+    input: `<div>
+  <script>
+(function(){
+switch(mode){
+case "A":
+console.log("mode A");
+break;
+  case "B":
+console.log("mode B");
+ break;
+default:
+ console.log("default");
+break;
+}
+
+@:
+@:if(a){
+@:console.log("loop", i);
+@:}
+})();
+  </script>
+</div>`,
+    expected: `<div>
+    <script>
+        (function(){
+            switch (mode) {
+                case "A":
+                    console.log("mode A");
+                    break;
+
+                case "B":
+                    console.log("mode B");
+                    break;
+
+                default:
+                    console.log("default");
+                    break;
+            }
+
+            @:
+            @:if(a){
+            @:    console.log("loop", i);
+            @:}
+        })();
+    </script>
+</div>`,
+    allowLineChange: true,
+    allowContentChange: true
   }
 ];
 

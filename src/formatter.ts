@@ -65,6 +65,7 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
 
   const desiredIndents: Array<number | null> = new Array(lines.length).fill(null);
   const indentAfterRazorPrefix: boolean[] = new Array(lines.length).fill(false);
+  const razorTextContentIndents: number[] = new Array(lines.length).fill(0);
   const rawLineMeta: Array<RawLineMeta | null> = new Array(lines.length).fill(null);
   const logs: string[] = [];
   const textBlocks: TextBlock[] = [];
@@ -192,7 +193,15 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
   }
 
   if (adjustTextBlocks) {
-    applyTextBlockIndentation(textBlocks, desiredIndents, lineInfos, indentSize, indentAfterRazorPrefix, rawLineMeta);
+    applyTextBlockIndentation(
+      textBlocks,
+      desiredIndents,
+      lineInfos,
+      indentSize,
+      indentAfterRazorPrefix,
+      razorTextContentIndents,
+      rawLineMeta
+    );
   } else {
     applyTextBlockOriginalIndent(textBlocks, desiredIndents, lineInfos);
   }
@@ -210,7 +219,7 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
       rest = formatRawLineContent(rest);
     }
     if (indentAfterRazorPrefix[index]) {
-      return makeRazorTextIndentedLine(rest, desired);
+      return makeRazorTextIndentedLine(rest, desired, razorTextContentIndents[index] ?? 0);
     }
     return makeIndentedLine(rest, desired);
   });
@@ -406,6 +415,7 @@ function applyTextBlockIndentation(
   lineInfos: LineInfo[],
   indentSize: number,
   indentAfterRazorPrefix: boolean[],
+  razorTextContentIndents: number[],
   rawLineMeta: Array<RawLineMeta | null>
 ): void {
   for (const block of blocks) {
@@ -422,11 +432,14 @@ function applyTextBlockIndentation(
     let razorBraceDepth = 0;
     let inRazorCodeBlock = false;
     let caseIndentDepth: number | null = null;
+    let pendingSwitch = false;
+    let razorTextGroupBaseLevel: number | null = null;
 
     for (let lineIndex = block.startLine; lineIndex <= block.endLine; lineIndex += 1) {
       const rest = lineInfos[lineIndex].rest;
       if (rest.length === 0) {
         desiredIndents[lineIndex] = 0;
+        razorTextGroupBaseLevel = null;
         if (isRawBlock) {
           rawLineMeta[lineIndex] = {
             isRawBlock: true,
@@ -447,24 +460,31 @@ function applyTextBlockIndentation(
       const lineInRazorBlock = isRawBlock && (inRazorCodeBlock || isRazorDirectiveLine);
 
       const jsTrimmed = isRazorLine ? '' : trimmed;
-            const isSwitchLine = isRawBlock && !isRazorLine && /^switch\s*\(/.test(jsTrimmed);
-            const isCaseOrDefault = isRawBlock && !isRazorLine && (/^case\b/.test(jsTrimmed) || /^default\b/.test(jsTrimmed));
-            const isBreakLine = isRawBlock && !isRazorLine && /^break\b/.test(jsTrimmed);
+      const isSwitchLine = isRawBlock && !isRazorLine && /^switch\s*\(/.test(jsTrimmed);
+      const isCaseOrDefault = isRawBlock && !isRazorLine && (/^case\b/.test(jsTrimmed) || /^default\b/.test(jsTrimmed));
+      const isBreakLine = isRawBlock && !isRazorLine && /^break\b/.test(jsTrimmed);
       const isClosingBraceLine = isRawBlock && !isRazorLine && jsTrimmed.startsWith('}');
       const inSwitch = isRawBlock && switchDepths.length > 0 && level >= switchDepths[switchDepths.length - 1];
 
       let lineIndent = baseIndent + effectiveLevel * indentSize;
-      if (isRawBlock && (isRazorLine || lineInRazorBlock)) {
-        lineIndent = effectiveLevel * indentSize;
-      }
       if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !isClosingBraceLine) {
         lineIndent += indentSize;
       }
 
-      desiredIndents[lineIndex] = lineIndent;
       if (isRawBlock && isRazorTextLine) {
+        if (razorTextGroupBaseLevel === null) {
+          razorTextGroupBaseLevel = effectiveLevel;
+        }
+        lineIndent = baseIndent + razorTextGroupBaseLevel * indentSize;
+        if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !isClosingBraceLine) {
+          lineIndent += indentSize;
+        }
         indentAfterRazorPrefix[lineIndex] = true;
+        razorTextContentIndents[lineIndex] = Math.max(0, (effectiveLevel - razorTextGroupBaseLevel) * indentSize);
+      } else if (isRawBlock) {
+        razorTextGroupBaseLevel = null;
       }
+      desiredIndents[lineIndex] = lineIndent;
 
       if (isRawBlock) {
         rawLineMeta[lineIndex] = {
@@ -484,8 +504,22 @@ function applyTextBlockIndentation(
         inRazorCodeBlock = razorBraceDepth > 0;
       }
 
-      if (isRawBlock && isSwitchLine && braceResult.open > 0) {
-        switchDepths.push(nextLevel);
+      if (isRawBlock && isSwitchLine) {
+        if (braceResult.open > 0) {
+          switchDepths.push(nextLevel);
+          pendingSwitch = false;
+        } else {
+          pendingSwitch = true;
+        }
+      }
+      if (isRawBlock && pendingSwitch && !isRazorLine && braceResult.open > 0) {
+        if (jsTrimmed.startsWith('{')) {
+          switchDepths.push(nextLevel);
+          pendingSwitch = false;
+        }
+      }
+      if (pendingSwitch && trimmed.length > 0 && !jsTrimmed.startsWith('{')) {
+        pendingSwitch = false;
       }
       if (inSwitch && isCaseOrDefault) {
         caseIndentDepth = level;
@@ -577,17 +611,18 @@ function insertSwitchBlankLines(
   return { lines: result, insertedBlankLines };
 }
 
-function makeRazorTextIndentedLine(rest: string, indentWidth: number): string {
+function makeRazorTextIndentedLine(rest: string, indentWidth: number, contentIndentWidth: number): string {
   const match = rest.match(/^@:([\s]*)(.*)$/);
   if (!match) {
     return makeIndentedLine(rest, indentWidth);
   }
   const content = match[2];
+  const lineIndent = indentWidth > 0 ? ' '.repeat(indentWidth) : '';
   if (content.length === 0) {
-    return '@:';
+    return `${lineIndent}@:`;
   }
   const spacer = match[1].length > 0 ? ' ' : '';
-  return `@:${spacer}${' '.repeat(indentWidth)}${content.trimStart()}`;
+  return `${lineIndent}@:${spacer}${' '.repeat(contentIndentWidth)}${content.trimStart()}`;
 }
 
 function makeIndentedLine(rest: string, indentWidth: number): string {
@@ -614,7 +649,13 @@ function validateOutput(
   while (originalIndex < originalLines.length && outputIndex < outputLines.length) {
     const outputLine = outputLines[outputIndex];
     if (allowBlankLineInsert && outputLine.trim().length === 0) {
-      outputIndex += 1;
+      const originalLine = originalLines[originalIndex] ?? '';
+      if (originalLine.trim().length === 0) {
+        originalIndex += 1;
+        outputIndex += 1;
+      } else {
+        outputIndex += 1;
+      }
       continue;
     }
 
