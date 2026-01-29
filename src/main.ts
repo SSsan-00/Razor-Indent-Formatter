@@ -250,14 +250,18 @@ function detectEncoding(bytes: Uint8Array): 'utf-8' | 'shift_jis' | 'euc-jp' {
   if (hasUtf8Bom(bytes)) {
     return 'utf-8';
   }
+  if (isAllAscii(bytes)) {
+    return 'utf-8';
+  }
   const candidates: Array<'utf-8' | 'shift_jis' | 'euc-jp'> = ['utf-8', 'shift_jis', 'euc-jp'];
-  let best = { encoding: 'utf-8' as const, score: Number.NEGATIVE_INFINITY };
+  let best = { encoding: 'utf-8' as const, score: Number.NEGATIVE_INFINITY, invalid: Number.POSITIVE_INFINITY };
 
   for (const encoding of candidates) {
+    const invalid = countInvalidBytes(bytes, encoding);
     const result = decodeWithEncoding(bytes, encoding);
     const score = scoreDecodedText(result.text, result.hadReplacement);
-    if (score > best.score) {
-      best = { encoding, score };
+    if (invalid < best.invalid || (invalid === best.invalid && score > best.score)) {
+      best = { encoding, score, invalid };
     }
   }
 
@@ -270,6 +274,147 @@ function hasUtf8Bom(bytes: Uint8Array): boolean {
 
 function stripUtf8Bom(bytes: Uint8Array): Uint8Array {
   return hasUtf8Bom(bytes) ? bytes.subarray(3) : bytes;
+}
+
+function isAllAscii(bytes: Uint8Array): boolean {
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (bytes[i] >= 0x80) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function countInvalidBytes(
+  bytes: Uint8Array,
+  encoding: 'utf-8' | 'shift_jis' | 'euc-jp'
+): number {
+  switch (encoding) {
+    case 'utf-8':
+      return countInvalidUtf8(bytes);
+    case 'shift_jis':
+      return countInvalidShiftJis(bytes);
+    case 'euc-jp':
+      return countInvalidEucJp(bytes);
+    default:
+      return Number.POSITIVE_INFINITY;
+  }
+}
+
+function countInvalidUtf8(bytes: Uint8Array): number {
+  let invalid = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    const b1 = bytes[i];
+    if (b1 <= 0x7f) {
+      continue;
+    }
+    if (b1 >= 0xc2 && b1 <= 0xdf) {
+      const b2 = bytes[i + 1];
+      if ((b2 & 0xc0) !== 0x80) {
+        invalid += 1;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (b1 >= 0xe0 && b1 <= 0xef) {
+      const b2 = bytes[i + 1];
+      const b3 = bytes[i + 2];
+      if ((b2 & 0xc0) !== 0x80 || (b3 & 0xc0) !== 0x80) {
+        invalid += 1;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+    if (b1 >= 0xf0 && b1 <= 0xf4) {
+      const b2 = bytes[i + 1];
+      const b3 = bytes[i + 2];
+      const b4 = bytes[i + 3];
+      if ((b2 & 0xc0) !== 0x80 || (b3 & 0xc0) !== 0x80 || (b4 & 0xc0) !== 0x80) {
+        invalid += 1;
+        continue;
+      }
+      i += 3;
+      continue;
+    }
+    invalid += 1;
+  }
+  return invalid;
+}
+
+function countInvalidShiftJis(bytes: Uint8Array): number {
+  let invalid = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    const b1 = bytes[i];
+    if (b1 <= 0x7f || (b1 >= 0xa1 && b1 <= 0xdf)) {
+      continue;
+    }
+    const isLead = (b1 >= 0x81 && b1 <= 0x9f) || (b1 >= 0xe0 && b1 <= 0xfc);
+    if (!isLead) {
+      invalid += 1;
+      continue;
+    }
+    const b2 = bytes[i + 1];
+    if (b2 === undefined) {
+      invalid += 1;
+      continue;
+    }
+    const isTrail = (b2 >= 0x40 && b2 <= 0x7e) || (b2 >= 0x80 && b2 <= 0xfc);
+    if (!isTrail || b2 === 0x7f) {
+      invalid += 1;
+      continue;
+    }
+    i += 1;
+  }
+  return invalid;
+}
+
+function countInvalidEucJp(bytes: Uint8Array): number {
+  let invalid = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    const b1 = bytes[i];
+    if (b1 <= 0x7f) {
+      continue;
+    }
+    if (b1 === 0x8e) {
+      const b2 = bytes[i + 1];
+      if (b2 === undefined || b2 < 0xa1 || b2 > 0xdf) {
+        invalid += 1;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (b1 === 0x8f) {
+      const b2 = bytes[i + 1];
+      const b3 = bytes[i + 2];
+      if (
+        b2 === undefined ||
+        b3 === undefined ||
+        b2 < 0xa1 ||
+        b2 > 0xfe ||
+        b3 < 0xa1 ||
+        b3 > 0xfe
+      ) {
+        invalid += 1;
+        continue;
+      }
+      i += 2;
+      continue;
+    }
+    if (b1 >= 0xa1 && b1 <= 0xfe) {
+      const b2 = bytes[i + 1];
+      if (b2 === undefined || b2 < 0xa1 || b2 > 0xfe) {
+        invalid += 1;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    invalid += 1;
+  }
+  return invalid;
 }
 
 function decodeWithEncoding(
