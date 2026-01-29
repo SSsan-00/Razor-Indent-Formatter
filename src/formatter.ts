@@ -77,6 +77,9 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
   let currentTextBlock: TextBlock | null = null;
   let inRawBlock = false;
   let inBlockComment = false;
+  const switchDepths: number[] = [];
+  let caseIndentDepth: number | null = null;
+  let pendingSwitch = false;
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
@@ -116,6 +119,7 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
 
     let openCount = 0;
     let closeCount = 0;
+    let braceResult = { open: 0, close: 0, inBlockComment };
 
     if (inRawTag) {
       if (containsClosingTag(cleanLine, inRawTag)) {
@@ -143,16 +147,64 @@ export function formatText(input: string, options: FormatOptions): FormatResult 
         }
       }
 
-      const braceResult = countBraces(info.rest, inBlockComment);
+      braceResult = countBraces(info.rest, inBlockComment);
       inBlockComment = braceResult.inBlockComment;
       openCount += braceResult.open;
       closeCount += braceResult.close;
     }
 
     const effectiveLevel = Math.max(0, level - leadingCloseCount);
-    desiredIndents[i] = effectiveLevel * indentSize;
+    const isHtml = isHtmlLine(trimmed);
+    const isRazorLine = trimmed.startsWith('@');
+    const isRazorTextLine = trimmed.startsWith('@:');
+    const razorTextContent = isRazorTextLine ? trimmed.slice(2).trimStart() : '';
+    const codeTrimmed = isRazorTextLine ? razorTextContent : (isRazorLine ? '' : trimmed);
+    const isSwitchLine = !isHtml && /^switch\s*\(/.test(codeTrimmed);
+    const isCaseOrDefault = !isHtml && (/^case\b/.test(codeTrimmed) || /^default\b/.test(codeTrimmed));
+    const isClosingBraceLine = !isHtml && codeTrimmed.startsWith('}');
+    const inSwitch = switchDepths.length > 0 && level >= switchDepths[switchDepths.length - 1];
+    const nextLevel = Math.max(0, level - closeCount + openCount);
+    const closesSwitch =
+      isClosingBraceLine &&
+      switchDepths.length > 0 &&
+      nextLevel < switchDepths[switchDepths.length - 1];
 
-    level = Math.max(0, level - closeCount + openCount);
+    let lineIndent = effectiveLevel * indentSize;
+    if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !closesSwitch) {
+      lineIndent += indentSize;
+    }
+    desiredIndents[i] = lineIndent;
+
+    let pendingSwitchSetThisLine = false;
+    if (isSwitchLine) {
+      if (braceResult.open > 0) {
+        switchDepths.push(nextLevel);
+        pendingSwitch = false;
+      } else {
+        pendingSwitch = true;
+        pendingSwitchSetThisLine = true;
+      }
+    }
+    if (pendingSwitch && braceResult.open > 0) {
+      if (codeTrimmed.startsWith('{')) {
+        switchDepths.push(nextLevel);
+        pendingSwitch = false;
+      }
+    }
+    if (!pendingSwitchSetThisLine && pendingSwitch && codeTrimmed.length > 0 && !codeTrimmed.startsWith('{')) {
+      pendingSwitch = false;
+    }
+    if (inSwitch && isCaseOrDefault) {
+      caseIndentDepth = level;
+    }
+    while (switchDepths.length > 0 && nextLevel < switchDepths[switchDepths.length - 1]) {
+      switchDepths.pop();
+    }
+    if (caseIndentDepth !== null && nextLevel < caseIndentDepth) {
+      caseIndentDepth = null;
+    }
+
+    level = nextLevel;
 
     if (isLineOpeningTag(trimmed, 'text') && !isLineClosingTag(trimmed, 'text')) {
       inTextBlock = true;
@@ -459,15 +511,22 @@ function applyTextBlockIndentation(
       const isRazorDirectiveLine = isRazorLine && !isRazorTextLine;
       const lineInRazorBlock = isRawBlock && (inRazorCodeBlock || isRazorDirectiveLine);
 
-      const jsTrimmed = isRazorLine ? '' : trimmed;
-      const isSwitchLine = isRawBlock && !isRazorLine && /^switch\s*\(/.test(jsTrimmed);
-      const isCaseOrDefault = isRawBlock && !isRazorLine && (/^case\b/.test(jsTrimmed) || /^default\b/.test(jsTrimmed));
-      const isBreakLine = isRawBlock && !isRazorLine && /^break\b/.test(jsTrimmed);
-      const isClosingBraceLine = isRawBlock && !isRazorLine && jsTrimmed.startsWith('}');
+      const razorTextContent = isRazorTextLine ? trimmed.slice(2).trimStart() : '';
+      const jsTrimmed = isRazorTextLine ? razorTextContent : (isRazorLine ? '' : trimmed);
+      const isSwitchLine = isRawBlock && /^switch\s*\(/.test(jsTrimmed);
+      const isCaseOrDefault = isRawBlock && (/^case\b/.test(jsTrimmed) || /^default\b/.test(jsTrimmed));
+      const isBreakLine = isRawBlock && /^break\b/.test(jsTrimmed);
+      const isClosingBraceLine = isRawBlock && jsTrimmed.startsWith('}');
       const inSwitch = isRawBlock && switchDepths.length > 0 && level >= switchDepths[switchDepths.length - 1];
+      const braceResult = countBraces(rest, inBlockComment);
+      const nextLevel = Math.max(0, level + braceResult.open - braceResult.close);
+      const closesSwitch =
+        isClosingBraceLine &&
+        switchDepths.length > 0 &&
+        nextLevel < switchDepths[switchDepths.length - 1];
 
       let lineIndent = baseIndent + effectiveLevel * indentSize;
-      if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !isClosingBraceLine) {
+      if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !closesSwitch) {
         lineIndent += indentSize;
       }
 
@@ -476,11 +535,12 @@ function applyTextBlockIndentation(
           razorTextGroupBaseLevel = effectiveLevel;
         }
         lineIndent = baseIndent + razorTextGroupBaseLevel * indentSize;
-        if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !isClosingBraceLine) {
-          lineIndent += indentSize;
-        }
         indentAfterRazorPrefix[lineIndex] = true;
-        razorTextContentIndents[lineIndex] = Math.max(0, (effectiveLevel - razorTextGroupBaseLevel) * indentSize);
+        let contentIndent = Math.max(0, (effectiveLevel - razorTextGroupBaseLevel) * indentSize);
+        if (inSwitch && caseIndentDepth !== null && !isCaseOrDefault && !closesSwitch) {
+          contentIndent += indentSize;
+        }
+        razorTextContentIndents[lineIndex] = contentIndent;
       } else if (isRawBlock) {
         razorTextGroupBaseLevel = null;
       }
@@ -495,30 +555,30 @@ function applyTextBlockIndentation(
         };
       }
 
-      const braceResult = countBraces(rest, inBlockComment);
       inBlockComment = braceResult.inBlockComment;
-      const nextLevel = Math.max(0, level + braceResult.open - braceResult.close);
 
       if (lineInRazorBlock) {
         razorBraceDepth = Math.max(0, razorBraceDepth + braceResult.open - braceResult.close);
         inRazorCodeBlock = razorBraceDepth > 0;
       }
 
+      let pendingSwitchSetThisLine = false;
       if (isRawBlock && isSwitchLine) {
         if (braceResult.open > 0) {
           switchDepths.push(nextLevel);
           pendingSwitch = false;
         } else {
           pendingSwitch = true;
+          pendingSwitchSetThisLine = true;
         }
       }
-      if (isRawBlock && pendingSwitch && !isRazorLine && braceResult.open > 0) {
+      if (isRawBlock && pendingSwitch && braceResult.open > 0) {
         if (jsTrimmed.startsWith('{')) {
           switchDepths.push(nextLevel);
           pendingSwitch = false;
         }
       }
-      if (pendingSwitch && trimmed.length > 0 && !jsTrimmed.startsWith('{')) {
+      if (!pendingSwitchSetThisLine && pendingSwitch && jsTrimmed.length > 0 && !jsTrimmed.startsWith('{')) {
         pendingSwitch = false;
       }
       if (inSwitch && isCaseOrDefault) {
@@ -595,13 +655,19 @@ function insertSwitchBlankLines(
     }
 
     if (meta.isCaseOrDefault && prevRawBreak && !prevRawLineBlank) {
-      result.push('');
+      const razorPrefixMatch = lines[i].match(/^(\s*)@:/);
+      if (razorPrefixMatch) {
+        result.push(`${razorPrefixMatch[1]}@:`);
+      } else {
+        result.push('');
+      }
       insertedBlankLines = true;
     }
 
     result.push(lines[i]);
 
-    const isBlank = lines[i].trim().length === 0;
+    const trimmedLine = lines[i].trim();
+    const isBlank = trimmedLine.length === 0 || trimmedLine === '@:';
     prevRawLineBlank = isBlank;
     if (!isBlank) {
       prevRawBreak = meta.isBreak;
@@ -621,8 +687,7 @@ function makeRazorTextIndentedLine(rest: string, indentWidth: number, contentInd
   if (content.length === 0) {
     return `${lineIndent}@:`;
   }
-  const spacer = match[1].length > 0 ? ' ' : '';
-  return `${lineIndent}@:${spacer}${' '.repeat(contentIndentWidth)}${content.trimStart()}`;
+  return `${lineIndent}@: ${' '.repeat(contentIndentWidth)}${content.trimStart()}`;
 }
 
 function makeIndentedLine(rest: string, indentWidth: number): string {
@@ -648,9 +713,11 @@ function validateOutput(
 
   while (originalIndex < originalLines.length && outputIndex < outputLines.length) {
     const outputLine = outputLines[outputIndex];
-    if (allowBlankLineInsert && outputLine.trim().length === 0) {
+    const trimmedOutput = outputLine.trim();
+    if (allowBlankLineInsert && (trimmedOutput.length === 0 || trimmedOutput === '@:')) {
       const originalLine = originalLines[originalIndex] ?? '';
-      if (originalLine.trim().length === 0) {
+      const trimmedOriginal = originalLine.trim();
+      if (trimmedOriginal.length === 0 || trimmedOriginal === '@:') {
         originalIndex += 1;
         outputIndex += 1;
       } else {
@@ -680,7 +747,8 @@ function validateOutput(
     }
   } else {
     for (let i = outputIndex; i < outputLines.length; i += 1) {
-      if (outputLines[i].trim().length > 0) {
+      const trimmed = outputLines[i].trim();
+      if (trimmed.length > 0 && trimmed !== '@:') {
         changedLines.push(String(originalLines.length));
         break;
       }

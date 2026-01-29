@@ -31,6 +31,11 @@ const tests: TestCase[] = [
     expected: `<text>\n    function test() {\n        console.log("test");\n    }\n</text>`
   },
   {
+    name: 'switch case preserves nested indent outside raw blocks',
+    input: `switch(foo) {\n    case "1":\n        if(bar) {\n            zoo = "zoo";\n        }\n        break;\n}`,
+    expected: `switch(foo) {\n    case "1":\n        if(bar) {\n            zoo = "zoo";\n        }\n        break;\n}`
+  },
+  {
     name: 'script block with switch',
     input: `<script>\nswitch(mode){\ncase "A":\nconsole.log("mode A");\nbreak;\n  case "B":\nconsole.log("mode B");\nbreak;\ndefault:\n console.log("default");\nbreak;\n}\n</script>`,
     expected: `<script>\nswitch (mode) {\n    case "A":\n        console.log("mode A");\n        break;\n\n    case "B":\n        console.log("mode B");\n        break;\n\n    default:\n        console.log("default");\n        break;\n}\n</script>`,
@@ -46,6 +51,13 @@ const tests: TestCase[] = [
     name: 'script block with Razor text lines',
     input: `<script>\n@{\nvar count = 3;\nvar isEnabled = true;\n}\n\n@: if (@(isEnabled.ToString().ToLower()))\n@:\n@: {\n@: console.log("enabled");\n@: }\n\n@: for (let i = 0; i < @count; i++)\n@:\n@: {\n@: console.log(i);\n@: }\n</script>`,
     expected: `<script>\n@{\n    var count = 3;\n    var isEnabled = true;\n}\n\n@: if (@(isEnabled.ToString().ToLower()))\n@:\n@: {\n@:     console.log("enabled");\n@: }\n\n@: for (let i = 0; i < @count; i++)\n@:\n@: {\n@:     console.log(i);\n@: }\n</script>`
+  },
+  {
+    name: 'script block switch in Razor text lines',
+    input: `<script>\n@{\nvar mode = "A";\n}\n\n@: switch ("@mode")\n@:\n@: {\n@: case "A":\n@: console.log("mode A");\n@: break;\n@:   case "B":\n@: console.log("mode B");\n@: break;\n@:default:\n@:  console.log("default");\n@:break;\n@: }\n</script>`,
+    expected: `<script>\n@{\n    var mode = "A";\n}\n\n@: switch ("@mode")\n@:\n@: {\n@:     case "A":\n@:         console.log("mode A");\n@:         break;\n@:\n@:     case "B":\n@:         console.log("mode B");\n@:         break;\n@:\n@:     default:\n@:         console.log("default");\n@:         break;\n@: }\n</script>`,
+    allowLineChange: true,
+    allowContentChange: true
   },
   {
     name: 'mixed Razor + text blocks',
@@ -94,9 +106,9 @@ break;
             }
 
             @:
-            @:if(a){
-            @:    console.log("loop", i);
-            @:}
+            @: if(a){
+            @:     console.log("loop", i);
+            @: }
         })();
     </script>
 </div>`,
