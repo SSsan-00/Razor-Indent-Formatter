@@ -477,6 +477,10 @@ function applyTextBlockIndentation(
     }
 
     const isRawBlock = RAW_TAGS.has(block.tagName);
+    if (isRawBlock && shouldPreserveRawBlockIndent(block, lineInfos)) {
+      applySingleTextBlockOriginalIndent(block, desiredIndents, lineInfos);
+      continue;
+    }
     const baseIndent = block.parentLevel * indentSize + (isRawBlock && block.parentLevel === 0 ? 0 : indentSize);
     const switchDepths: number[] = [];
     let level = 0;
@@ -616,6 +620,39 @@ function applyTextBlockOriginalIndent(
       desiredIndents[lineIndex] = lineInfos[lineIndex].leadingWidth;
     }
   }
+}
+
+function shouldPreserveRawBlockIndent(block: TextBlock, lineInfos: LineInfo[]): boolean {
+  let hasRazorDirective = false;
+  let hasNonRazorLine = false;
+  let razorBraceDepth = 0;
+
+  for (let lineIndex = block.startLine; lineIndex <= block.endLine; lineIndex += 1) {
+    const rest = lineInfos[lineIndex].rest;
+    const trimmed = rest.trimStart();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    const isRazorTextLine = trimmed.startsWith('@:');
+    const isRazorDirectiveLine = trimmed.startsWith('@') && !isRazorTextLine;
+    const inRazorBlock = razorBraceDepth > 0 || isRazorDirectiveLine;
+
+    if (isRazorDirectiveLine) {
+      hasRazorDirective = true;
+    } else if (!trimmed.startsWith('@') && !inRazorBlock) {
+      hasNonRazorLine = true;
+    }
+
+    if (inRazorBlock) {
+      const braceResult = countBraces(rest, false);
+      razorBraceDepth = Math.max(0, razorBraceDepth + braceResult.open - braceResult.close);
+    }
+    if (hasRazorDirective && hasNonRazorLine) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function formatRawLineContent(rest: string): string {
